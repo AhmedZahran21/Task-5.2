@@ -74,3 +74,35 @@ Every attack from the `Flow.md` file works because the Reviews feature trusts us
 Your solution should utilize the `DOMPurify` package together with a custom configured `Content-Security-Policy` header via the `helmet` package. You are expected to know the difference between `DOMPurify` (which sanitizes the data/markup on the client before it is rendered) and a `Content-Security-Policy` (a browser-enforced policy sent by the server that restricts what may run), and to think carefully about why layering both — **defense-in-depth** — is stronger than either one alone.
 
 > A `jest` test suite ships with this task. From the project root, run `npm install` then `npm test`. The tests encode the secure behavior, so they **fail now** and **pass once your fix is applied** — use them to verify your work.
+
+## Implemented protection
+
+Review HTML now passes through [DOMPurify](https://github.com/cure53/DOMPurify)
+immediately before `dangerouslySetInnerHTML`. The allowlist preserves paragraphs,
+bold, italics, lists, line breaks, blockquotes and links. Scripts, event handlers,
+unsafe link URLs, images, SVG, forms and styling are removed. Escaping all HTML
+would display formatting tags as text; sanitizing instead retains the supported
+formatting. Stored bodies remain untrusted, so previously saved reviews receive
+the same protection when viewed.
+
+[Helmet](https://helmetjs.github.io/) sets a custom CSP on API responses with
+`script-src 'self'`, `script-src-attr 'none'` and `object-src 'none'`. Because the
+client is served separately, Vite also sends a CSP on its development and preview
+pages. Development permits only React Refresh's exact inline script hash and the
+local API/HMR connections. Preview permits only same-origin scripts, without that
+development hash. Sanitization removes dangerous markup; CSP independently
+restricts browser execution if dangerous markup reaches the page.
+
+Run `npm test -- --runInBand` for the supplied suite plus regression coverage of
+the Flow alert and exfiltration payloads, SVG handlers, script tags, unsafe links,
+and preservation of legitimate formatting. Run `npm run build --workspace client`
+to build the client, then `node tests/verify-frontend-csp.mjs` to verify the CSP
+headers on development and preview HTML, including the React Refresh hash.
+The integration suite needs a cached MongoDB test binary; its first download can
+exceed the suite's 60-second setup timeout. To run checks that do not need MongoDB,
+use `npm test -- --selectProjects client --runInBand` and
+`npm test -- --selectProjects server --testPathPatterns=securityHeaders.test.js --runInBand`.
+For a deployed static build, configure the frontend hosting
+server to send the equivalent preview CSP: Vite's headers are not embedded in
+`dist`, and the API's CSP does not govern a separately hosted HTML page. Adjust
+the allowed API origin when deploying beyond localhost.

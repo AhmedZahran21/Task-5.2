@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MONGOMS_VERSION: '8.2.6'
+      MONGOMS_DOWNLOAD_DIR: ${{ runner.temp }}/mongodb-binaries
+      MONGOMS_DISABLE_POSTINSTALL: '1'
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Cache the MongoDB test binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MONGOMS_DOWNLOAD_DIR }}
+          key: ${{ runner.os }}-mongodb-${{ env.MONGOMS_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare the MongoDB test binary
+        run: |
+          node --input-type=module <<'NODE'
+          import { MongoMemoryServer } from 'mongodb-memory-server';
+          const mongo = await MongoMemoryServer.create();
+          await mongo.stop();
+          NODE
+
+      - name: Run the test suite
+        run: npm test -- --runInBand
+
+      - name: Build the client
+        run: npm run build --workspace client
+
+      - name: Verify frontend CSP headers
+        run: node tests/verify-frontend-csp.mjs
